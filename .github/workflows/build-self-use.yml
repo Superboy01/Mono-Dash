@@ -1,0 +1,65 @@
+name: Build Mono Dash Self-Use APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Bypass server limit for personal build
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(
+              "lib/presentation/features/purchases/providers/purchase_provider.dart"
+          )
+          source = path.read_text()
+
+          old = "static const bypassServerLimitCheck = false;"
+          new = "static const bypassServerLimitCheck = true;"
+
+          if old not in source:
+              raise SystemExit(
+                  "Target configuration was not found. "
+                  "The source code may have changed."
+              )
+
+          path.write_text(source.replace(old, new, 1))
+          print("Server limit bypass enabled for this build.")
+          PY
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze source
+        run: flutter analyze
+
+      - name: Build APK
+        run: flutter build apk --debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mono-dash-self-use-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 30
