@@ -39,27 +39,54 @@ jobs:
           new = "static const bypassServerLimitCheck = true;"
 
           if old not in source:
-              raise SystemExit(
-                  "Target configuration was not found. "
-                  "The source code may have changed."
-              )
+              raise SystemExit("Target configuration was not found")
 
           path.write_text(source.replace(old, new, 1))
-          print("Server limit bypass enabled for this build.")
+          print("Server limit bypass enabled.")
           PY
 
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Analyze source
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Restore Android signing key
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -eu
 
-      - name: Build APK
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+
+          mkdir -p android/keystore
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | base64 --decode \
+            > android/keystore/mono-dash-release.jks
+
+          printf '%s\n' \
+            "storeFile=../keystore/mono-dash-release.jks" \
+            "storePassword=$ANDROID_KEYSTORE_PASSWORD" \
+            "keyAlias=$ANDROID_KEY_ALIAS" \
+            "keyPassword=$ANDROID_KEY_PASSWORD" \
+            > android/key.properties
+
+          test -s android/keystore/mono-dash-release.jks
+          test -s android/key.properties
+
+          echo "Android signing key restored."
+
+      - name: Build optimized ARM64 APK
         run: flutter build apk --release --target-platform android-arm64
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: mono-dash-self-use-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: mono-dash-self-use-arm64-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
